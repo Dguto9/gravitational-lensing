@@ -36,8 +36,10 @@ typedef struct sphere_t {
     float radius;
 } sphere_t;
 
-box_t box = {{-1,4,-1},{2,2,2}};
-sphere_t sphere = {{-2,3,-1},0.5};
+//box_t box = {{-1,4,-1},{2,2,2}};
+//sphere_t sphere = {{-6,0,0},0.5};
+sphere_t* spheres;
+int sphereCount = 5;
 int arrowL = 0;
 int arrowR = 0;
 int arrowU = 0;
@@ -49,15 +51,22 @@ int tick = 0;
 void normalize(vec3_t* v);
 void rotate(vec3_t* v, float yaw, float pitch);
 void vPrint(vec3_t v);
+int sphereFunc(vec3_t pos, sphere_t* sphere);
 
 int main(int argc, char **argv) {
-  SDL_Init(SDL_INIT_VIDEO);
+    SDL_Init(SDL_INIT_VIDEO);
 
-	cellVals = malloc(simW*simH*sizeof(float));
+    cellVals = malloc(simW*simH*sizeof(float));
+    spheres = malloc(sphereCount*sizeof(sphere_t));
+
+    for (int i = 0; i<sphereCount; i++){
+        spheres[i] = (sphere_t){{10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5},0.5};
+    }
 
     SDL_Window *window = SDL_CreateWindow("Ray Marching", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_OPENGL);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);    
     SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, simW, simH);
+    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 50);
     SDL_SetRelativeMouseMode(1);
     bool running = true;
     SDL_Event event;
@@ -104,10 +113,8 @@ int main(int argc, char **argv) {
                      }
                     break;
                 case SDL_MOUSEMOTION:
-                    camRot.z += event.motion.xrel/(float)simW;
-                    camRot.x += event.motion.yrel/(float)simH;
-                    printf("%i\n",event.motion.yrel);
-                    //printf("Early: {%f,%f}\n",camRot.z,camRot.x);
+                    camRot.z -= event.motion.xrel/(float)simW;
+                    camRot.x -= event.motion.yrel/(float)simH;
                     break;        
             }
         }
@@ -117,17 +124,21 @@ int main(int argc, char **argv) {
                 vec3_t ray = {j-(simW/2), fLen, -(i-(simH/2))};                
                 normalize(&ray);
                 rotate(&ray, camRot.z, camRot.x);
+                normalize(&ray);
                 vec3_t raymarch = camPos;
                 for (int k = 0; k < 75; k++){
                     raymarch.x += ray.x*0.1;
                     raymarch.y += ray.y*0.1;
                     raymarch.z += ray.z*0.1;
-                    if ((raymarch.x < box.pos.x+box.scale.x && raymarch.x > box.pos.x && raymarch.y < box.pos.y+box.scale.y && raymarch.y > box.pos.y && raymarch.z < box.pos.z+box.scale.z && raymarch.z > box.pos.z) || ((sphere.pos.x-raymarch.x)*(sphere.pos.x-raymarch.x)+(sphere.pos.y-raymarch.y)*(sphere.pos.y-raymarch.y)+(sphere.pos.z-raymarch.z)*(sphere.pos.z-raymarch.z)) < (sphere.radius*sphere.radius)){
-                        cellVals[j + (i*simW)] = (1-((float)k/75));//*(1-((float)k/100));
-                        break;
-                    }
-                    else{
-                        cellVals[j+(i*simW)] = 0;
+                    for (int l = 0; l < sphereCount; l++){
+                        if (sphereFunc(raymarch, &spheres[l])){
+                            cellVals[j + (i*simW)] = (1-((float)k/75));
+                            k = 75;
+                            break;
+                        }
+                        else{
+                            cellVals[j+(i*simW)] = 0;
+                        }
                     }
                 }
             }
@@ -136,16 +147,14 @@ int main(int argc, char **argv) {
         vec3_t camRight = {1,0,0};
         rotate(&camForward, camRot.z, camRot.x);
         rotate(&camRight, camRot.z, camRot.x);
-        //printf("Late:  {%f,%f}\n",camRot.z,camRot.x);        
-        //vPrint(camForward);
-        box.pos.x = -1+2*sin((float)tick/20);
+        //box.pos.x = -1+2*sin((float)tick/20);
         //camPos.x += 0.1*(float)(-arrowL+arrowR);
         //camPos.z += 0.1*(float)(arrowD-arrowU);
         camPos.x += 0.1*((arrowU-arrowD)*camForward.x + (arrowR-arrowL)*camRight.x);
         camPos.y += 0.1*((arrowU-arrowD)*camForward.y + (arrowR-arrowL)*camRight.y);
         camPos.z += 0.1*((arrowU-arrowD)*camForward.z + (arrowR-arrowL)*camRight.z);
         
-        box.pos.z = -1+2*cos((float)tick/20);
+        //box.pos.z = -1+2.5*cos((float)tick/20);
         tick++;
         int* pixels;
         int pitch;
@@ -176,11 +185,21 @@ void normalize(vec3_t* v){
 }
 
 void rotate(vec3_t* v, float yaw, float pitch){
-    v->x = v->x*cos(yaw) - v->y*sin(yaw)*cos(pitch) + v->z*sin(yaw)*sin(pitch);
-    v->y = v->x*sin(yaw) + v->y*cos(yaw)*cos(pitch) - v->z*sin(pitch)*cos(yaw);
-    v->z =                 v->y*sin(pitch)          + v->z*cos(pitch);
+    vec3_t rot;
+    rot.x = v->x*cos(yaw) - v->y*sin(yaw)*cos(pitch) + v->z*sin(yaw)*sin(pitch);
+    rot.y = v->x*sin(yaw) + v->y*cos(yaw)*cos(pitch) - v->z*sin(pitch)*cos(yaw);
+    rot.z =                 v->y*sin(pitch)          + v->z*cos(pitch);
+    *v = rot;
 }
 
 void vPrint(vec3_t v){
     printf("{%f,%f,%f}\n",v.x,v.y,v.z);   
+}
+
+int boxFunc(vec3_t pos, box_t box){
+    return (pos.x < box.pos.x+box.scale.x) && (pos.x > box.pos.x) && (pos.y < box.pos.y+box.scale.y) && (pos.y > box.pos.y) && (pos.z < box.pos.z+box.scale.z) && (pos.z > box.pos.z);
+}
+
+int sphereFunc(vec3_t pos, sphere_t* sphere){
+    return (sphere->pos.x-pos.x)*(sphere->pos.x-pos.x)+(sphere->pos.y-pos.y)*(sphere->pos.y-pos.y)+(sphere->pos.z-pos.z)*(sphere->pos.z-pos.z) < (sphere->radius*sphere->radius);
 }

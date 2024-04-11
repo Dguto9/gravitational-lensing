@@ -15,8 +15,8 @@
 float* cellVals;
 float fLen = 100;
 
-int simW = 200;
-int simH = 150;
+int simW = 160;
+int simH = 120;
 int width = 800;
 int height = 600;
 
@@ -34,6 +34,7 @@ typedef struct box_t {
 typedef struct sphere_t {
     vec3_t pos;
     float radius;
+    vec3_t col;
 } sphere_t;
 
 //box_t box = {{-1,4,-1},{2,2,2}};
@@ -56,11 +57,11 @@ int sphereFunc(vec3_t pos, sphere_t* sphere);
 int main(int argc, char **argv) {
     SDL_Init(SDL_INIT_VIDEO);
 
-    cellVals = malloc(simW*simH*sizeof(float));
+    cellVals = malloc(3*simW*simH*sizeof(float));
     spheres = malloc(sphereCount*sizeof(sphere_t));
 
     for (int i = 0; i<sphereCount; i++){
-        spheres[i] = (sphere_t){{10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5},0.5};
+        spheres[i] = (sphere_t){{10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5},0.5,{rand()/(float)RAND_MAX, rand()/(float)RAND_MAX, rand()/(float)RAND_MAX}};
     }
 
     SDL_Window *window = SDL_CreateWindow("Ray Marching", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_OPENGL);
@@ -132,12 +133,18 @@ int main(int argc, char **argv) {
                     raymarch.z += ray.z*0.1;
                     for (int l = 0; l < sphereCount; l++){
                         if (sphereFunc(raymarch, &spheres[l])){
-                            cellVals[j + (i*simW)] = (1-((float)k/75));
+                            cellVals[(3*j) + (3*i*simW)] = (1-((float)k/75))*spheres[l].col.x;
+                            cellVals[(3*j)+1 + (3*i*simW)] = (1-((float)k/75))*spheres[l].col.y;
+                            cellVals[(3*j)+2 + (3*i*simW)] = (1-((float)k/75))*spheres[l].col.z;
                             k = 75;
                             break;
                         }
                         else{
-                            cellVals[j+(i*simW)] = 0;
+                            for (int m = 0; m < 3; m++){
+                                cellVals[(3*j)+m+(3*i*simW)] = 0;
+                                cellVals[(3*j)+m+(3*i*simW)] = 0;
+                                cellVals[(3*j)+m+(3*i*simW)] = 0;
+                            }
                         }
                     }
                 }
@@ -159,9 +166,11 @@ int main(int argc, char **argv) {
         int* pixels;
         int pitch;
         SDL_LockTexture(texture, NULL, &pixels, &pitch);
-        for (int i = 0; i < simW*simH; i++){
-            uint8_t col = abs(cellVals[i]*255);
-            pixels[i] = (col << 24 | col << 16 | col << 8 | 0xFF);
+        for (int i = 0; i < simW*simH*3; i+=3){
+            uint8_t r = cellVals[i]*255;
+            uint8_t g = cellVals[i+1]*255;
+            uint8_t b = cellVals[i+2]*255;
+            pixels[i/3] = (r << 24 | g << 16 | b << 8 | 0xFF);
         }
         SDL_UnlockTexture(texture);
 

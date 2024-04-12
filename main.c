@@ -6,8 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include <SDL2/SDL.h>
-// Normally SDL2 will redefine the main entry point of the program for Windows applications
-// this doesn't seem to play nice with TCC, so we just undefine the redefinition
+
 #ifdef __TINYC__
     #undef main
 #endif
@@ -38,8 +37,6 @@ typedef struct sphere_t {
     float mass;
 } sphere_t;
 
-//box_t box = {{-1,4,-1},{2,2,2}};
-//sphere_t sphere = {{-6,0,0},0.5};
 sphere_t* spheres;
 int sphereCount = 5;
 int arrowL = 0;
@@ -163,8 +160,6 @@ int main(int argc, char **argv) {
                         else{
                             for (int m = 0; m < 3; m++){
                                 cellVals[(3*j)+m+(3*i*simW)] = 0;
-                                cellVals[(3*j)+m+(3*i*simW)] = 0;
-                                cellVals[(3*j)+m+(3*i*simW)] = 0;
                             }
                         }
                     }
@@ -175,15 +170,13 @@ int main(int argc, char **argv) {
         vec3_t camRight = {1,0,0};
         rotate(&camForward, camRot.z, camRot.x);
         rotate(&camRight, camRot.z, camRot.x);
-        //box.pos.x = -1+2*sin((float)tick/20);
-        //camPos.x += 0.1*(float)(-arrowL+arrowR);
-        //camPos.z += 0.1*(float)(arrowD-arrowU);
+
         camPos.x += 0.1*((arrowU-arrowD)*camForward.x + (arrowR-arrowL)*camRight.x);
         camPos.y += 0.1*((arrowU-arrowD)*camForward.y + (arrowR-arrowL)*camRight.y);
         camPos.z += 0.1*((arrowU-arrowD)*camForward.z + (arrowR-arrowL)*camRight.z);
-        
-        //box.pos.z = -1+2.5*cos((float)tick/20);
+
         tick++;
+
         int* pixels;
         int pitch;
         SDL_LockTexture(texture, NULL, &pixels, &pitch);

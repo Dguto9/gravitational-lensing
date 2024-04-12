@@ -35,6 +35,7 @@ typedef struct sphere_t {
     vec3_t pos;
     float radius;
     vec3_t col;
+    float mass;
 } sphere_t;
 
 //box_t box = {{-1,4,-1},{2,2,2}};
@@ -45,11 +46,15 @@ int arrowL = 0;
 int arrowR = 0;
 int arrowU = 0;
 int arrowD = 0;
+int gravToggle = 1;
 vec3_t camPos = {0,0,0};
 vec3_t camRot = {0,0,0};
 int tick = 0;
 
+float G = 0;
+
 void normalize(vec3_t* v);
+float distance(vec3_t* v);
 void rotate(vec3_t* v, float yaw, float pitch);
 void vPrint(vec3_t v);
 int sphereFunc(vec3_t pos, sphere_t* sphere);
@@ -61,7 +66,7 @@ int main(int argc, char **argv) {
     spheres = malloc(sphereCount*sizeof(sphere_t));
 
     for (int i = 0; i<sphereCount; i++){
-        spheres[i] = (sphere_t){{10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5},0.5,{rand()/(float)RAND_MAX, rand()/(float)RAND_MAX, rand()/(float)RAND_MAX}};
+        spheres[i] = (sphere_t){{10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5, 10*(rand()/(float)RAND_MAX)-5},0.5,{rand()/(float)RAND_MAX, rand()/(float)RAND_MAX, rand()/(float)RAND_MAX}, rand()/(float)RAND_MAX};
     }
 
     SDL_Window *window = SDL_CreateWindow("Ray Marching", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_OPENGL);
@@ -79,17 +84,20 @@ int main(int argc, char **argv) {
                     break;
                 case SDL_KEYDOWN:
                     switch(event.key.keysym.sym){
-                        case SDLK_LEFT:
+                        case SDLK_a:
                             arrowL = 1;
                             break;
-                        case SDLK_RIGHT:
+                        case SDLK_d:
                             arrowR = 1;
                             break;
-                        case SDLK_UP:
+                        case SDLK_w:
                             arrowU = 1;
                             break;
-                        case SDLK_DOWN:
+                        case SDLK_s:
                             arrowD = 1;
+                            break;
+                        case SDLK_LSHIFT:
+                            gravToggle = 0;
                             break;
                         default:
                             break;           
@@ -97,17 +105,20 @@ int main(int argc, char **argv) {
                     break; 
                 case SDL_KEYUP:
                     switch(event.key.keysym.sym){
-                        case SDLK_LEFT:
+                        case SDLK_a:
                             arrowL = 0;
                             break;
-                        case SDLK_RIGHT:
+                        case SDLK_d:
                             arrowR = 0;
                             break;
-                        case SDLK_UP:
+                        case SDLK_w:
                             arrowU = 0;
                             break;
-                        case SDLK_DOWN:
+                        case SDLK_s:
                             arrowD = 0;
+                            break;
+                        case SDLK_LSHIFT:
+                            gravToggle = 1;
                             break;
                         default:
                             break;           
@@ -116,7 +127,11 @@ int main(int argc, char **argv) {
                 case SDL_MOUSEMOTION:
                     camRot.z -= event.motion.xrel/(float)simW;
                     camRot.x -= event.motion.yrel/(float)simH;
-                    break;        
+                    break;
+                case SDL_MOUSEWHEEL:
+                    G += event.wheel.preciseY/10;
+                    printf("G: %f\n", G);
+                    break;
             }
         }
 
@@ -132,6 +147,12 @@ int main(int argc, char **argv) {
                     raymarch.y += ray.y*0.1;
                     raymarch.z += ray.z*0.1;
                     for (int l = 0; l < sphereCount; l++){
+                        vec3_t dirTo = {spheres[l].pos.x - raymarch.x, spheres[l].pos.y - raymarch.y, spheres[l].pos.z - raymarch.z };
+                        normalize(&dirTo);
+                        float dist = distance(&dirTo);
+                        ray.x += (gravToggle) ? G : 0*(dirTo.x * spheres[l].mass / (dist * dist))*0.1;
+                        ray.y += (gravToggle) ? G : 0 *(dirTo.y * spheres[l].mass / (dist * dist))*0.1;
+                        ray.z += (gravToggle) ? G : 0 *(dirTo.z * spheres[l].mass / (dist * dist))*0.1;
                         if (sphereFunc(raymarch, &spheres[l])){
                             cellVals[(3*j) + (3*i*simW)] = (1-((float)k/75))*spheres[l].col.x;
                             cellVals[(3*j)+1 + (3*i*simW)] = (1-((float)k/75))*spheres[l].col.y;
@@ -191,6 +212,10 @@ void normalize(vec3_t* v){
     v->x /= magn;
     v->y /= magn;
     v->z /= magn;
+}
+
+float distance(vec3_t* v) {
+    return sqrt((v->x * v->x) + (v->y * v->y) + (v->z * v->z));
 }
 
 void rotate(vec3_t* v, float yaw, float pitch){

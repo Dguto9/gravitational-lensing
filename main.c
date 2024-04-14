@@ -124,6 +124,8 @@ int main(int argc, char **argv) {
                 case SDL_MOUSEMOTION:
                     camRot.z -= event.motion.xrel/(float)simW;
                     camRot.x -= event.motion.yrel/(float)simH;
+                    if (camRot.x > M_PI / 2) camRot.x = M_PI / 2;
+                    if (camRot.x < -M_PI / 2) camRot.x = -M_PI / 2;
                     break;
                 case SDL_MOUSEWHEEL:
                     G += event.wheel.preciseY/10;

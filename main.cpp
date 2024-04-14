@@ -7,6 +7,11 @@
 #include <math.h>
 #include <SDL2/SDL.h>
 
+#ifdef __CUDACC__
+    #include "cuda_runtime.h"
+    #include "device_launch_parameters.h"
+#endif
+
 #ifdef __TINYC__
     #undef main
 #endif
@@ -59,18 +64,18 @@ int sphereFunc(vec3_t pos, sphere_t* sphere);
 int main(int argc, char **argv) {
     SDL_Init(SDL_INIT_VIDEO);
 
-    cellVals = malloc(3*simW*simH*sizeof(float));
-    spheres = malloc(sphereCount*sizeof(sphere_t));
+    cellVals = (float*)malloc(3*simW*simH*sizeof(float));
+    spheres = (sphere_t*)malloc(sphereCount*sizeof(sphere_t));
 
     for (int i = 0; i<sphereCount; i++){
-        spheres[i] = (sphere_t){{8*(rand()/(float)RAND_MAX)-4, 8*(rand()/(float)RAND_MAX)-4, 8*(rand()/(float)RAND_MAX)-4},0.5,{rand()/(float)RAND_MAX, rand()/(float)RAND_MAX, rand()/(float)RAND_MAX}, 0.1*rand()/(float)RAND_MAX};
+        spheres[i] = sphere_t{{8*(rand()/(float)RAND_MAX)-4, 8*(rand()/(float)RAND_MAX)-4, 8*(rand()/(float)RAND_MAX)-4},0.5,{rand()/(float)RAND_MAX, rand()/(float)RAND_MAX, rand()/(float)RAND_MAX},0.1f*rand()/(float)RAND_MAX};
     }
 
     SDL_Window *window = SDL_CreateWindow("Ray Marching", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_OPENGL);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);    
     SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, simW, simH);
     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 50);
-    SDL_SetRelativeMouseMode(1);
+    SDL_SetRelativeMouseMode((SDL_bool)1);
     bool running = true;
     SDL_Event event;
     while(running) {
@@ -187,7 +192,7 @@ int main(int argc, char **argv) {
 
         int* pixels;
         int pitch;
-        SDL_LockTexture(texture, NULL, &pixels, &pitch);
+        SDL_LockTexture(texture, NULL, (void**)&pixels, &pitch);
         for (int i = 0; i < simW*simH*3; i+=3){
             uint8_t r = cellVals[i]*255;
             uint8_t g = cellVals[i+1]*255;

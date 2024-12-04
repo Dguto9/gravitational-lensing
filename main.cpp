@@ -58,8 +58,8 @@ box_t* boxes;
 int boxCount = 3;
 
 box_t table = {{0, 0, -3.2}, {2.2, 1, 0.4}, {0.6, 0.6, 0.6}};
-box_t p1 = {{-2.4, 0, -2.5}, {0.1, 0.4, 0.4}, {0.7, 0.7, 0.7}};
-box_t p2 = {{2.4, 0, -2.5}, {0.1, 0.4, 0.4}, {0.7, 0.7, 0.7}};
+box_t p1 = {{-2.4, 0, -2.5}, {0.4, 0.4, 0.4}, {0.7, 0.7, 0.7}};
+box_t p2 = {{2.4, 0, -2.5}, {0.4, 0.4, 0.4}, {0.7, 0.7, 0.7}};
 sphere_t ball = {{0, 0, -1}, {0, 0, 0}, 0.1, {1, 1, 1}, 0.1};
 
 box_t bounds = {{0,0,0}, {4,4,4}, {1,1,1}};
@@ -217,7 +217,7 @@ int main(int argc, char **argv) {
                      }
                     break;
                 case SDL_MOUSEMOTION:
-                    camRot.z -= event.motion.xrel/(float)simW;
+                    //camRot.z -= event.motion.xrel/(float)simW;
                     camRot.x -= event.motion.yrel/(float)simH;
                     if (camRot.x > M_PI / 2) camRot.x = M_PI / 2;
                     if (camRot.x < -M_PI / 2) camRot.x = -M_PI / 2;
@@ -242,7 +242,8 @@ int main(int argc, char **argv) {
         vec3_t camRight = {1,0,0};
         rotate(&camForward, camRot.z, camRot.x);
         rotate(&camRight, camRot.z, camRot.x);
-        camPos.x = 0.2*ball.pos.x;
+        camPos.x = -0.2*ball.pos.x;
+        camRot.z = -0.05*ball.pos.x;
 
         //camPos.x += 0.1*((arrowU-arrowD)*camForward.x + (arrowR-arrowL)*camRight.x);
         //camPos.y += 0.1*((arrowU-arrowD)*camForward.y + (arrowR-arrowL)*camRight.y);
@@ -271,11 +272,21 @@ int main(int argc, char **argv) {
             ball.pos.z = -1;
             ball.vel.x = serve;
             serve*=-1;
+            spheres[0].pos.x = 4*(float)rand()/RAND_MAX - 2;
+            spheres[0].pos.z = 2*(float)rand()/RAND_MAX - 1;
             
         }
         if(boxFunc(ball.pos, &table)){
             ball.vel.z *= -1;
             ball.pos.z += table.scale.z;
+        }
+        if(boxFunc(ball.pos, &p1)){
+            ball.vel.x *= -1;
+            ball.pos.x += p1.scale.x;
+        }
+        if(boxFunc(ball.pos, &p2)){
+            ball.vel.x *= -1;
+            ball.pos.x += p2.scale.x;
         }
         
         tick++;

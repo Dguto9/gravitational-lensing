@@ -6,6 +6,7 @@
 #include <time.h>
 #include <string.h>
 #include <math.h>
+#include <pthread.h>
 #include <SDL2/SDL.h>
 
 #ifdef __CUDACC__
@@ -22,10 +23,13 @@ float fLen = 50;
 float viewDist = 10;
 float rayRes = 0.05;
 
-int simW = 150;
-int simH = 200;
+int simW = 200;
+int simH = 150;
 int width = 800;
 int height = 600;
+
+int vert_split = 2;
+int hori_split = 2;
 
 typedef struct vec3_t {
     float x;
@@ -88,6 +92,7 @@ __global__ void computeRaymarch(float* cellVals, int simW, int simH, sphere_t* s
 #else
 void computeRaymarch(float* cellVals, int simW, int simH, sphere_t* spheres, int sphereCount, int gravToggle, float G, vec3_t camPos, vec3_t camRot, float fLen, float viewDist, float rayRes);
 #endif
+void* computeRaymarchThread(void* args);
 #ifdef __CUDACC__ 
 __host__ __device__
 #endif 
@@ -236,7 +241,21 @@ int main(int argc, char **argv) {
         cudaDeviceSynchronize();
         cudaMemcpy(cellVals, cellValsGPU, 3 * simW * simH * sizeof(float), cudaMemcpyDeviceToHost);
 #else
-        computeRaymarch(cellVals, simW, simH, spheres, sphereCount, gravToggle, G, camPos, camRot, fLen, viewDist, rayRes);
+        int threadargs[4*vert_split*hori_split];
+        pthread_t threads[vert_split*hori_split];
+        for (int i = 0; i < vert_split; i++){
+            for (int j = 0; j < hori_split; j++){
+                threadargs[(j*4) + (hori_split*4*i)] = j*(simW/hori_split);
+                threadargs[(j*4) + 1 + (hori_split*4*i)] = (j+1)*(simW/hori_split);
+                threadargs[(j*4) + 2 + (hori_split*4*i)] = i*(simH/vert_split);
+                threadargs[(j*4) + 3 + (hori_split*4*i)] = (i+1)*(simH/vert_split);
+                pthread_create(&threads[j + (hori_split*i)], NULL, computeRaymarchThread, &threadargs[(j*4) + (hori_split*4*i)]);
+            }
+        }
+        
+        for(int i = 0; i<2; i++){
+            pthread_join(threads[i], NULL);
+        }
 #endif
         vec3_t camForward = {0,1,0};
         vec3_t camRight = {1,0,0};
@@ -259,12 +278,12 @@ int main(int argc, char **argv) {
         vec3_t dirTo = { spheres[0].pos.x - ball.pos.x, spheres[0].pos.y - ball.pos.y, spheres[0].pos.z - ball.pos.z };
         float dist = distance_squared(&dirTo);
         normalize(&dirTo);                    
-        ball.vel.x += ((gravToggle) ? G : 0) * (dirTo.x * spheres[0].mass / (dist + 0.01));
-        ball.vel.y += ((gravToggle) ? G : 0) * (dirTo.y * spheres[0].mass / (dist + 0.01));
-        ball.vel.z += ((gravToggle) ? G : 0) * (dirTo.z * spheres[0].mass / (dist + 0.01)) - 0.05;
-        ball.pos.x += ball.vel.x;
-        ball.pos.y += ball.vel.y;
-        ball.pos.z += ball.vel.z;
+        ball.vel.x += ((gravToggle) ? G : 0) * (dirTo.x * spheres[0].mass / (dist + 0.01)) * 0.5;
+        ball.vel.y += ((gravToggle) ? G : 0) * (dirTo.y * spheres[0].mass / (dist + 0.01)) * 0.5;
+        ball.vel.z += ((gravToggle) ? G : 0) * (dirTo.z * spheres[0].mass / (dist + 0.01)) * 0.5 - 0.025;
+        ball.pos.x += ball.vel.x * 0.5;
+        ball.pos.y += ball.vel.y * 0.5;
+        ball.pos.z += ball.vel.z * 0.5;
         //spheres[1] = ball;
 
         if(!boxFunc(ball.pos, &bounds)){
@@ -286,7 +305,7 @@ int main(int argc, char **argv) {
         }
         if(boxFunc(ball.pos, &p2)){
             ball.vel.x *= -1;
-            ball.pos.x += p2.scale.x;
+            ball.pos.x -= p2.scale.x;
         }
         
         tick++;
@@ -446,6 +465,99 @@ void computeRaymarch(float* cellVals, int simW, int simH, sphere_t* spheres, int
 }
 #endif
 
+void* computeRaymarchThread(void* args) {
+    int minW = ((int*)args)[0];
+    int maxW = ((int*)args)[1];
+    int minH = ((int*)args)[2];
+    int maxH = ((int*)args)[3];
+    
+    for (int i = minH; i < maxH; i++) {
+        for (int j = minW; j < maxW; j++) {
+            vec3_t ray = { j - (simW / 2.0f), fLen, -(i - (simH / 2.0f)) };
+            normalize(&ray);
+            rotate(&ray, camRot.z, camRot.x);
+            vec3_t raymarch = camPos;
+            for (int k = 0; k < (int)(viewDist/rayRes); k++) {
+                raymarch.x += ray.x * rayRes;
+                raymarch.y += ray.y * rayRes;
+                raymarch.z += ray.z * rayRes;
+                for (int l = 0; l < sphereCount; l++) {
+                    vec3_t dirTo = { spheres[l].pos.x - raymarch.x, spheres[l].pos.y - raymarch.y, spheres[l].pos.z - raymarch.z };
+                    float dist = distance_squared(&dirTo);
+                    normalize(&dirTo);
+                    ray.x += ((gravToggle) ? G : 0) * (dirTo.x * spheres[l].mass / (dist+0.001)) * 0.1;
+                    ray.y += ((gravToggle) ? G : 0) * (dirTo.y * spheres[l].mass / (dist+0.001)) * 0.1;
+                    ray.z += ((gravToggle) ? G : 0) * (dirTo.z * spheres[l].mass / (dist+0.001)) * 0.1;
+                    // if (sphereFunc(raymarch, &spheres[l])) {
+                    //     cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / 150)) * spheres[l].col.x;
+                    //     cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / 150)) * spheres[l].col.y;
+                    //     cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / 150)) * spheres[l].col.z;
+                    //     k = 150;
+                    //     break;
+                    // }
+                    // else {
+                    // }
+                }
+                
+                for (int m = 0; m < 3; m++) {
+                    cellVals[(3 * j) + m + (3 * i * simW)] = 0;
+                }
+                for (int m = 0; m < boxCount; m++){
+                    if (boxFunc(raymarch, &boxes[m])){
+                        cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * boxes[m].col.x;
+                        cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * boxes[m].col.y;
+                        cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * boxes[m].col.z;
+                        k = (int)(viewDist/rayRes);
+                        break;
+                    }
+                }
+                if (sphereFunc(raymarch, &ball)){
+                    cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ball.col.x;
+                    cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ball.col.y;
+                    cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ball.col.z;
+                    break;
+                }
+                if (raymarch.x > 4) {
+                    cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))); 
+                    cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes)));
+                    cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    break;
+                }
+                else if (raymarch.y > 4) {
+                    cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))); 
+                    cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes)));
+                    cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    break;
+                }
+                else if (raymarch.z > 4) {
+                    cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))); 
+                    cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes)));
+                    cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    break;
+                }
+                else if (raymarch.x < -4) {
+                    cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))); 
+                    cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    break;
+                }
+                else if (raymarch.y < -4) {
+                    cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))); 
+                    cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    break;
+                }
+                else if (raymarch.z < -4) {
+                    cellVals[(3 * j) + 1 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))); 
+                    cellVals[(3 * j) + 2 + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    cellVals[(3 * j) + (3 * i * simW)] = (1 - ((float)k / (viewDist / rayRes))) * ((((int)raymarch.x % 2) ? 1 : -0.5) * (((int)raymarch.y % 2) ? 1 : -0.5) * (((int)raymarch.z % 2) ? 1 : -0.5) + 1) * 0.5;
+                    break;
+                }
+            }
+        }
+    }
+    return NULL;
+}
 #ifdef __CUDACC__ 
 __host__ __device__ 
 #endif 
